@@ -1,0 +1,224 @@
+/** 修改历史
+ *   日期               作者          修改内容
+ * -----------------------------------------------------------------------------
+ * 2011-11-9            李小强         创建CLASS
+ */
+package com.test.dwrpush;
+
+
+import java.util.Collection;
+
+import javax.servlet.http.HttpSession;
+
+import org.directwebremoting.ScriptBuffer;
+import org.directwebremoting.ScriptSession;
+import org.directwebremoting.WebContext;
+import org.directwebremoting.WebContextFactory;
+
+public class SendPush {
+	/**
+	 * 推送消息 代码大意请参见说明3
+	 * @param msg 消息内容
+	 * @param channel:消息模式；
+	 *        0：发送当前角色所在场景的信息；
+	 *        1：发送自己班级的信息；
+	 *        2：发送自己社团的信息；
+	 *        3：世界；
+	 *        4：私聊；
+	 *        5：系统;
+	 * @param to:消息的接收者
+	 */	
+	public void send(String channel, String msg, String to) {
+		try {
+			WebContext context = WebContextFactory.get();
+			System.out.println("获取Context");
+			DWRService.setContext(context);
+			// 获取访问这个页面的所有session,既访问这个页面的所有用户
+			Collection<ScriptSession> sessions = context.getScriptSessionsByPage("/dwrpush/index.jsp");
+			ScriptSession myScSession = context.getScriptSession();
+			if ((msg == null || "".equals(msg))|| (channel == null || "".equals(channel))) {
+				return;
+			}
+			HttpSession httpSession = context.getSession();
+			/*
+			 * 因为每次刷新页面都要生成新的会话,所以要记录上次生成的会话,以便在每次刷新页面或退出时, 让上次的会话失效.
+			 * 由于在分布式环境中要求放入作用域的对应要implements Serializable.
+			 * 但ScriptSession没有继承Serializable,其实现类也没有实现Serializable.
+			 * 所以这里用hashCode进行标识一个会话.
+			 */
+			httpSession.setAttribute("scriptSession", myScSession.hashCode());
+			User user = (User) httpSession.getAttribute("user");
+			if (user == null) {
+				return;
+			}
+
+			if ((User) myScSession.getAttribute("user") == null) {
+				myScSession.setAttribute("user", user);
+			}
+
+			Chat chat = new Chat();
+			chat.setType(channel);
+			chat.setMsg(" " + msg);
+			chat.setSender(user.getUsername());
+
+			ScriptBuffer buffer = new ScriptBuffer();
+			buffer.appendScript("Chat.receive(");
+			buffer.appendData(chat);
+			buffer.appendScript(")");
+
+			boolean existTo = false;// 用于私聊,标识要聊天的对象是否存在
+			for (ScriptSession s : sessions) {// 循环所有的人,向其发送消息
+				User u = (User) s.getAttribute("user");
+				if (u != null && !chat.getMsg().matches("\\s+")) {
+					if ("0".equals(channel)
+							&& (s == myScSession || u.getRoomName().equals(
+									user.getRoomName()))) {// 发送当前角色所在场景的信息
+						s.addScript(buffer);
+					} else if ("1".equals(channel)) {// 发送自己班级的信息
+						if (!"".equals(user.getClazz())
+								&& (u.getClazz().equals(user.getClazz()))) {// 班级默认是空串,所以要排除
+							s.addScript(buffer);// 详见说明2
+						} else if (s == myScSession
+								&& "".equals(user.getClazz())) {// 表示没有加入班级
+							chat.setSender("系统");
+							chat.setMsg(" 还没有加入班级");
+							chat.setState(-1);
+							ScriptBuffer b = new ScriptBuffer();
+							b.appendScript("Chat.receive(");
+							b.appendData(chat);
+							b.appendScript(")");
+							myScSession.addScript(b);
+							return;
+						}
+					} else if ("2".equals(channel)) {// 发送自己社团的信息
+						if (!"".equals(user.getAsso())
+								&& (u.getAsso().equals(user.getAsso()))) {
+							s.addScript(buffer);
+						} else if (s == myScSession
+								&& "".equals(user.getAsso())) {// 表示没有加入社团
+							chat.setSender("系统");
+							chat.setMsg(" 还没有加入社团");
+							chat.setState(-1);
+							ScriptBuffer b = new ScriptBuffer();
+							b.appendScript("Chat.receive(");
+							b.appendData(chat);
+							b.appendScript(")");
+							myScSession.addScript(b);
+							return;
+						}
+					} else if ("3".equals(channel)) {// 世界
+						s.addScript(buffer);
+					} else if ("4".equals(channel)) {// 私聊
+						if (user.getUsername().equals(to)) {// 如果是对自己聊天
+							chat.setMsg(" 不能对自己聊天");
+							chat.setSender("系统");
+							chat.setState(-1);
+							ScriptBuffer b = new ScriptBuffer();
+							b.appendScript("Chat.receive(");
+							b.appendData(chat);
+							b.appendScript(")");
+							myScSession.addScript(b);
+							return;
+						}
+						if (u.getUsername().equals(to) && s != myScSession) {// 向对方发送私聊信息
+							chat.setSender(user.getUsername() + "对您说");
+							ScriptBuffer b = new ScriptBuffer();
+							b.appendScript("Chat.receive(");
+							b.appendData(chat);
+							b.appendScript(")");
+							s.addScript(b);
+
+							existTo = true;
+
+							// 经过测试即,使找到私聊的对象,也不能return,必须继续循环完才能将消息推送出去.
+							// return;
+						}
+					} else if ("5".equals(channel)) {// 系统
+						s.addScript(buffer);
+					}
+				}
+			}
+			if ("4".equals(channel)) {
+				if (!existTo) {// 如果不存在私聊对象
+					chat.setMsg(" 角色不存在或不在线");
+					chat.setSender("系统");
+					buffer = new ScriptBuffer();
+					buffer.appendScript("Chat.receive(");
+					buffer.appendData(chat);
+					buffer.appendScript(");");
+					myScSession.addScript(buffer);
+				} else {// 存在则还要向自己发送信息
+					chat.setSender("您对" + to + "说");
+					ScriptBuffer b = new ScriptBuffer();
+					b.appendScript("Chat.receive(");
+					b.appendData(chat);
+					b.appendScript(")");
+					myScSession.addScript(b);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * 当刷新页面或退出时,调用此方法,以便清除多余的session. 见说明1
+	 */
+	public void exitGame() {
+		try {
+			System.out.println("++++++");
+			WebContext context = WebContextFactory.get();
+			HttpSession httpSession = context.getSession();
+			Integer myScSession = (Integer) httpSession.getAttribute("scriptSession");
+			if (myScSession != null) {
+				Collection<ScriptSession> sessions = context.getScriptSessionsByPage("/dwrpush/index.jsp");
+				for (ScriptSession s : sessions) {
+					if (s.hashCode() == myScSession) {
+						s.invalidate();
+						return;
+					}
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public static void pushMsg(WebContext context, String msg, String touserCode) {
+		if (msg == null || msg.trim().equals("") || touserCode == null) {
+			return;
+		}
+		try {
+			Collection<ScriptSession> sessions = context.getScriptSessionsByPage("/dwrpush/index.jsp");// 获取页面的session
+			ScriptSession myScSession = context.getScriptSession();
+			HttpSession httpSession = context.getSession();
+			/*
+			 * 因为每次刷新页面都要生成新的会话,所以要记录上次生成的会话,以便在每次刷新页面或退出时, 让上次的会话失效.
+			 * 由于在分布式环境中要求放入作用域的对应要implements Serializable.
+			 * 但ScriptSession没有继承Serializable,其实现类也没有实现Serializable.
+			 * 所以这里用hashCode进行标识一个会话.
+			 */
+			httpSession.setAttribute("scriptSession", myScSession.hashCode());
+			User user = (User) httpSession.getAttribute("user");
+			if (user == null) {
+				return;
+			}
+
+			if ((User) myScSession.getAttribute("user") == null) {
+				myScSession.setAttribute("user", user);
+			}
+			for (ScriptSession s : sessions) {// 循环所有的人,向其发送消息
+				User u = (User) s.getAttribute("user");
+				if (u.getUsername().equals(touserCode) && s != myScSession) {// 向对方发送私聊信息
+					ScriptBuffer b = new ScriptBuffer();
+					b.appendScript("Chat.receive(");
+					b.appendData(msg);
+					b.appendScript(")");
+					s.addScript(b);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+}

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN 2.0//EN" "http://www.springframework.org/dtd/spring-beans-2.0.dtd">
+<beans>
+
+    <!-- 导入外部数据库定义属性文件 -->
+	<bean id="DBConfig"
+		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+			<value>classpath:datebase.properties</value>
+			</list>
+		</property>
+	</bean>
+
+	<!-- 第一数据源 采用c3p0数据库连接池的定义 -->
+	<bean id="dataSource"  class="com.mchange.v2.c3p0.ComboPooledDataSource" destroy-method="close" dependency-check="default">
+		  <property name="driverClass" value="${db.driver}"></property>
+		  <property name="jdbcUrl" value="${db.url}"></property>
+		  <property name="user" value="${db.username}"></property>
+		  <property name="password" value="${db.password}"></property>
+	      <property name="minPoolSize"><value>1</value></property>
+          <property name="maxPoolSize"><value>10</value></property>
+          <property name="maxIdleTime"><value>1800</value></property>
+          <property name="acquireIncrement"><value>2</value></property>
+          <property name="maxStatements"><value>0</value></property>
+          <property name="initialPoolSize"><value>2</value></property>
+          <property name="idleConnectionTestPeriod"><value>1800</value></property>
+          <property name="acquireRetryAttempts"><value>30</value></property>
+          <property name="breakAfterAcquireFailure"><value>true</value></property>
+          <property name="testConnectionOnCheckout"><value>false</value></property>
+	</bean>
+
+
+
+	<!-- 配置数据库访问为Spring JdbcTemplate框架-->
+	<bean id="SpringJdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate"> 
+		<!--property name="dataSource"><ref local="oa_dataSource"/></property-->
+		<property name="dataSource"><ref local="dataSource"/></property>
+	</bean>	 
+    <!-- 配置数据库lob字段读取为Spring lob-->
+	<bean id="defaultLobHandler" 
+	class="org.springframework.jdbc.support.lob.DefaultLobHandler" 
+	lazy-init="true"></bean> 
+    <!--bean id="defaultLobHandler" 
+	class="org.springframework.jdbc.support.lob.OracleLobHandler" 
+	lazy-init="true">
+		<property name="nativeJdbcExtractor"><ref bean="nativeJdbcExtractor"/></property> 
+
+	</bean-->
+      <bean id="nativeJdbcExtractor"  class="org.springframework.jdbc.support.nativejdbc.C3P0NativeJdbcExtractor" >
+
+	</bean>
+    
+    <!-- 配置 Spring 数据库访问异常信息-->
+	<bean id="myJdbcExceptionTranslator" class="org.springframework.jdbc.support.SQLErrorCodeSQLExceptionTranslator"> 
+		<property name="dataSource"><ref bean="dataSource"/></property> 
+	</bean> 
+    
+ 	
+	<!-- 配置数据库事物为Spring TransactionManager-->
+	<bean id="transactionManager"
+		class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+		<property name="dataSource">
+			<ref local="dataSource" />
+		</property>
+	</bean>
+	   
+    
+    <!-- 配置事务代理模板 -->
+	<bean id="transactionProxyFactory"
+		class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean"
+		abstract="true">
+		<property name="transactionManager" ref="transactionManager" />
+		<property name="transactionAttributes">
+			<props>
+		    <prop key="*">PROPAGATION_REQUIRED</prop>  
+            <prop key="load*">PROPAGATION_REQUIRED,readOnly</prop>  
+            <prop key="get*">PROPAGATION_REQUIRED,readOnly</prop>  
+            <prop key="find*">PROPAGATION_REQUIRED,readOnly</prop>
+            <prop key="t_*">PROPAGATION_REQUIRED,-Exception</prop>
+			</props>
+		</property>
+	</bean>
+
+	
+</beans>

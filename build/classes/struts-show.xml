@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+        "http://struts.apache.org/dtds/struts-2.0.dtd">
+<struts>
+    
+    <package name="show"  extends="strutsdefault" namespace="/show">
+
+    	<!-- 工作列表 -->
+    	<action name="list" class="com.bringspring.gateway.action.showAction" method="list">
+    		<result type="redirect">/jsp/index.jsp</result>
+    	</action>
+      <action name="list_new" class="com.bringspring.gateway.action.showAction" method="list">
+        </action>
+      <action name="load" class="com.bringspring.gateway.action.showAction" method="load">
+        </action>
+        <action name="detail" class="com.bringspring.gateway.action.showAction" method="detail">
+            <result type="redirect">/jsp/detail.jsp</result>
+        </action>
+    </package>
+    
+  
+</struts>
+
